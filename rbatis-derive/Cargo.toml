@@ -7,7 +7,11 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
+convert_case = "0.10.0"
 darling = "0.23.0"
 manyhow = { version = "0.11.4", features = ["darling"] }
 proc-macro2 = "1.0.103"
+quote = "1.0.42"
+rbatis = { version = "4.6.14", features = ["rbatis-macro-driver"] }
+rbs = "4.6.2"
 syn = { version = "2.0.111", features = ["full"] }
