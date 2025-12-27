@@ -112,7 +112,7 @@ pub fn derive_schema(input: DeriveInput) -> manyhow::Result<TokenStream> {
         rbatis,
         rbs,
         data: schema_data,
-    } = DeriveSchemaInput::from_derive_input(&input).or_else(|e| Err(syn::Error::from(e)))?;
+    } = DeriveSchemaInput::from_derive_input(&input).map_err(syn::Error::from)?;
     let rbatis = rbatis.unwrap_or(Path::from(Ident::new("rbatis", Span::call_site())));
     let rbs = rbs.unwrap_or(Path::from(Ident::new("rbs", Span::call_site())));
     let table_name = table
@@ -182,14 +182,32 @@ pub fn derive_schema(input: DeriveInput) -> manyhow::Result<TokenStream> {
             }
             
             /// Sync this schema with the database using the provided mapper
-            pub async fn sync(rb: &#rbatis::rbatis::RBatis, mapper: &dyn #rbatis::table_sync::ColumnMapper) -> #rbatis::error::Result<()> {
+            pub async fn sync(rb: &#rbatis::RBatis, mapper: &dyn #rbatis::table_sync::ColumnMapper) -> #rbatis::Result<()> {
                 let mut columns: std::collections::HashMap<String, String> = std::collections::HashMap::new();
                 for field in Self::fields() {
                     let _ = columns.insert(field.clone(), Self::field_constraints(field.clone(), mapper).unwrap());
                 }
 
                 let map = #rbs::value!(columns);
-                #rbatis::rbatis::RBatis::sync(&rb.acquire().await.unwrap(), mapper, &map, #table_name).await?;
+                #rbatis::RBatis::sync(&rb.acquire().await.unwrap(), mapper, &map, #table_name).await?;
+                Ok(())
+            }
+
+            /// Save this model to the database
+            pub async fn save(&self, database: &#rbatis::RBatis) -> #rbatis::Result<()> {
+                let existing = Self::select_by_map(database, #rbs::value!{"id": self.id.clone()}).await?;
+                if existing.len() > 0 {
+                    Self::update_by_map(database, &self, #rbs::value!{"id": self.id.clone()}).await?;
+                } else {
+                    Self::insert(database, &self).await?;
+                }
+                
+                Ok(())
+            }
+
+            /// Delete this model from the database
+            pub async fn delete(&self, database: &#rbatis::RBatis) -> #rbatis::Result<()> {
+                Self::delete_by_map(database, #rbs::value!{"id": self.id.clone()}).await?;
                 Ok(())
             }
         }
