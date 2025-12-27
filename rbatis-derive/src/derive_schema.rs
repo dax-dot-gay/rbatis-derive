@@ -45,7 +45,7 @@ struct DeriveSchemaInput {
     pub data: Data<(), FieldReciever>,
 }
 
-fn process_field(field: FieldReciever, parent: Ident, rbs: Path, rbatis: Path) -> manyhow::Result<(Arm, Arm, Vec<Stmt>)> {
+fn process_field(field: FieldReciever, parent: Ident, table_name: String, rbs: Path, rbatis: Path) -> manyhow::Result<(Arm, Arm, Vec<Stmt>)> {
     let FieldReciever {
         ident,
         ty,
@@ -95,10 +95,10 @@ fn process_field(field: FieldReciever, parent: Ident, rbs: Path, rbatis: Path) -
         let cased_ident = format_ident!("{}", ident_str);
 
         selects.push(syn::parse2(quote! {
-            #rbatis::impl_select!(#parent{#select_with_ident(#cased_ident: #ty) -> Vec => #select_query});
+            #rbatis::impl_select!(#parent{#select_with_ident(#cased_ident: #ty) -> Vec => #select_query}, #table_name);
         })?);
         selects.push(syn::parse2(quote! {
-            #rbatis::impl_select!(#parent{#select_one_with_ident(#cased_ident: #ty) -> Option => #select_one_query});
+            #rbatis::impl_select!(#parent{#select_one_with_ident(#cased_ident: #ty) -> Option => #select_one_query}, #table_name);
         })?);
     }
 
@@ -140,7 +140,7 @@ pub fn derive_schema(input: DeriveInput) -> manyhow::Result<TokenStream> {
     let mut constraint_arms = Punctuated::<Arm, Token![,]>::new();
     let mut select_impls: Vec<Stmt> = vec![];
     for field in fields.clone() {
-        let (ft, c, ss) = process_field(field, schema_ident.clone(), rbs.clone(), rbatis.clone())?;
+        let (ft, c, ss) = process_field(field, schema_ident.clone(), table_name.clone(), rbs.clone(), rbatis.clone())?;
         field_type_arms.push(ft);
         constraint_arms.push(c);
         select_impls.extend(ss);

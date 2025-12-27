@@ -1,6 +1,6 @@
 [package]
 name = "rbatis-derive"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 license = "MIT"
 description = "Derive macro to simplify RBatis schema generation"
