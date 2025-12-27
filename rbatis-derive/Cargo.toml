@@ -1,0 +1,13 @@
+[package]
+name = "rbatis-derive"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+darling = "0.23.0"
+manyhow = { version = "0.11.4", features = ["darling"] }
+proc-macro2 = "1.0.103"
+syn = { version = "2.0.111", features = ["full"] }
