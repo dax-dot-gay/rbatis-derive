@@ -1,8 +1,8 @@
 use convert_case::{Case, Casing};
 use darling::{FromDeriveInput, FromField, FromMeta, ast::Data};
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
-use syn::{Arm, DeriveInput, Expr, Ident, Path, Token, Type, punctuated::Punctuated};
+use quote::{format_ident, quote};
+use syn::{Arm, DeriveInput, Expr, Ident, Path, Stmt, Token, Type, punctuated::Punctuated};
 
 #[derive(FromField, Clone, Debug)]
 #[darling(attributes(field))]
@@ -45,14 +45,14 @@ struct DeriveSchemaInput {
     pub data: Data<(), FieldReciever>,
 }
 
-fn process_field(field: FieldReciever, rbs: Path) -> manyhow::Result<(Arm, Arm)> {
+fn process_field(field: FieldReciever, parent: Ident, rbs: Path, rbatis: Path) -> manyhow::Result<(Arm, Arm, Vec<Stmt>)> {
     let FieldReciever {
         ident,
         ty,
         unique,
         not_null,
         sql_type,
-        ..
+        select
     } = field;
     let ident = ident.unwrap();
     let ident_str = ident.to_string().to_case(Case::Snake);
@@ -86,7 +86,23 @@ fn process_field(field: FieldReciever, rbs: Path) -> manyhow::Result<(Arm, Arm)>
         }
     })?;
 
-    Ok((field_type_arm, constraint_arm))
+    let mut selects: Vec<Stmt> = vec![];
+    if select {
+        let select_with_ident = format_ident!("select_with_{}", ident_str.clone());
+        let select_one_with_ident = format_ident!("select_one_with_{}", ident_str.clone());
+        let select_query = format!("`where {ident_str} = #{{{ident_str}}}`");
+        let select_one_query = format!("`where {ident_str} = #{{{ident_str}}} limit 1`");
+        let cased_ident = format_ident!("{}", ident_str);
+
+        selects.push(syn::parse2(quote! {
+            #rbatis::impl_select!(#parent{#select_with_ident(#cased_ident: #ty) -> Vec => #select_query});
+        })?);
+        selects.push(syn::parse2(quote! {
+            #rbatis::impl_select!(#parent{#select_one_with_ident(#cased_ident: #ty) -> Option => #select_one_query});
+        })?);
+    }
+
+    Ok((field_type_arm, constraint_arm, selects))
 }
 
 pub fn derive_schema(input: DeriveInput) -> manyhow::Result<TokenStream> {
@@ -122,20 +138,24 @@ pub fn derive_schema(input: DeriveInput) -> manyhow::Result<TokenStream> {
 
     let mut field_type_arms = Punctuated::<Arm, Token![,]>::new();
     let mut constraint_arms = Punctuated::<Arm, Token![,]>::new();
+    let mut select_impls: Vec<Stmt> = vec![];
     for field in fields.clone() {
-        let (ft, c) = process_field(field, rbs.clone())?;
+        let (ft, c, ss) = process_field(field, schema_ident.clone(), rbs.clone(), rbatis.clone())?;
         field_type_arms.push(ft);
         constraint_arms.push(c);
+        select_impls.extend(ss);
     }
 
     Ok(quote! {
         #rbatis::crud!(#schema_ident{}, #table_name);
-
+        #(#select_impls)*
         impl #schema_ident {
+            /// Return a list of field keys for this Schema
             pub fn fields() -> Vec<String> {
                 vec![#field_keys].into_iter().map(|v| v.to_string()).collect()
             }
 
+            /// Get the SQL type of a field, if it exists
             pub fn field_type(field: impl Into<String>, mapper: &dyn #rbatis::table_sync::ColumnMapper) -> Option<String> {
                 let field = field.into();
                 if !Self::fields().contains(&field) {
@@ -147,7 +167,8 @@ pub fn derive_schema(input: DeriveInput) -> manyhow::Result<TokenStream> {
                     _ => None
                 }
             }
-
+            
+            /// Get the SQL constraints of a field, if it exists
             pub fn field_constraints(field: impl Into<String>, mapper: &dyn #rbatis::table_sync::ColumnMapper) -> Option<String> {
                 let field = field.into();
                 if !Self::fields().contains(&field) {
@@ -159,7 +180,8 @@ pub fn derive_schema(input: DeriveInput) -> manyhow::Result<TokenStream> {
                     _ => None
                 }
             }
-
+            
+            /// Sync this schema with the database using the provided mapper
             pub async fn sync(rb: &#rbatis::rbatis::RBatis, mapper: &dyn #rbatis::table_sync::ColumnMapper) -> #rbatis::error::Result<()> {
                 let mut columns: std::collections::HashMap<String, String> = std::collections::HashMap::new();
                 for field in Self::fields() {

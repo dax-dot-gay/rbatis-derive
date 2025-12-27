@@ -5,9 +5,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug, Schema)]
 #[schema(table(name = "test"))]
 struct TestModel {
+    #[field(select)]
     pub id: Uuid,
 
-    #[field(not_null, unique)]
+    #[field(not_null, unique, select)]
     pub name: String,
     pub description: Option<String>
 }
